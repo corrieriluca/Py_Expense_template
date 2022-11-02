@@ -2,6 +2,7 @@ from PyInquirer import prompt
 from prompt_toolkit.validation import Validator, ValidationError
 import csv
 
+from debt import add_debts_from_expense
 from user import get_user_list
 
 class NumberValidator(Validator):
@@ -43,11 +44,18 @@ expense_questions = [
 ]
 
 
+def check_sum(expense, shares):
+    total = 0
+    for user in shares:
+        total += float(shares[user])
+    return total <= float(expense['amount'])
+
+
 def get_expense_list():
     def parse_shared(shared):
         return shared.split("|")
 
-    with open('expense_report.csv', newline='') as f:
+    with open('data/expense_report.csv', newline='') as f:
         reader = csv.reader(f)
         for row in reader:
             yield {
@@ -58,10 +66,13 @@ def get_expense_list():
             }
 
 
-def save_expense_to_csv(expense):
-    with open('expense_report.csv', 'a', newline='') as f:
+def save_expense_to_csv(expense, shares):
+    with open('data/expense_report.csv', 'a', newline='') as f:
         writer = csv.writer(f)
-        shared = "|".join(expense['shared'])
+        shares_to_shared = []
+        for user in expense['shared']:
+            shares_to_shared.append(user + ";" + shares[user])
+        shared = "|".join(shares_to_shared)
         writer.writerow([expense['amount'], expense['label'], expense['spender'], shared])
 
 
@@ -87,6 +98,21 @@ def new_expense(*args):
         print("You can't share with yourself.")
         return False
 
-    save_expense_to_csv(expense)
+    shares_questions = []
+    for user in expense['shared']:
+        shares_questions.append({
+            "type":"input",
+            "name": user,
+            "message":"How much do " + user + " owes?",
+            "validate": NumberValidator,
+        })
+
+    shares = prompt(shares_questions)
+    if not check_sum(expense, shares):
+        print("The sum of shares is greater than the expense amount.")
+        return False
+
+    save_expense_to_csv(expense, shares)
+    add_debts_from_expense(expense, shares)
     print("Expense Added !")
     return True
